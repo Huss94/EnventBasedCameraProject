@@ -116,62 +116,104 @@ def compute_velocity(a,b):
 
 
 
+def get_circular_coordinates(x,y, R):
+    """
+    Retourne les coordonnées circulaires sur un rayon R autour de x, y
+    """
+    teta = np.linspace(-np.pi, np.pi, 2*R)
+    x_coord = x + (R*np.cos(teta)).astype(int)
+    y_coord = y + (R*np.sin(teta)).astype(int)
+
+    coord = arr([x_coord, y_coord]).T
+    
+    return np.unique(coord, axis = 0)
 
 
-
-def local_plane_fitting(x, y , p ,ts, L, dt):
+def local_plane_fitting(x, y ,ts, nei ):
     th1 = 1e-5
     th2 = 0.05
-    v = np.zeros((len(x), 2))
-    for i in tqdm(range(len(x))): 
 
-        nei = np.where((x[i] - L <= x ) & (x<= x[i] +L) &
-                        (y[i] - L<= y ) & (y<= y[i] +L) &
-                        (ts[i] - dt <= ts) & (ts <= ts[i] + dt))[0]
+    Pi0 = compute_lmsq(x[nei], y[nei], ts[nei])
         
-        #Compute lmsq calcul les coefficient du plan. Retourne none 
-        Pi0 = compute_lmsq(x[nei], y[nei], ts[nei])
-        
-        if Pi0 is None:
-            continue
+    if Pi0 is None:
+        return None
 
-        eps = 10e6
-        while eps > th1:
-            A,B,C = Pi0
-            indices_to_delete = np.argwhere(A*x[nei] + B*y[nei] + C - ts[nei] > th2)[:,0]
-            n_nei = len(nei)     
-            nei = np.delete(nei, indices_to_delete)
-            if len(nei) == n_nei:
-                #Dans ce cas la on a enelvé aucun event, alors on considère directement Pi0 comme le plan solution
-                break            
+    eps = 10e6
+    while eps > th1:
+        A,B,C = Pi0
+        indices_to_delete = np.argwhere(A*x[nei] + B*y[nei] + C - ts[nei] > th2)[:,0]
+        n_nei = len(nei)     
+        nei = np.delete(nei, indices_to_delete)
+        if len(nei) == n_nei:
+            #Dans ce cas la on a enelvé aucun event, alors on considère directement Pi0 comme le plan solution
+            break            
 
-            Pi = compute_lmsq(x[nei], y[nei], ts[nei]) 
-            if Pi is not None:
-                eps = np.linalg.norm(arr(Pi) - arr(Pi0))
-                Pi0 = Pi
-            else: 
-                break
-        v[i] = compute_velocity(Pi0[0], Pi0[1])
-    return v
+        Pi = compute_lmsq(x[nei], y[nei], ts[nei]) 
+        if Pi is not None:
+            eps = np.linalg.norm(arr(Pi) - arr(Pi0))
+            Pi0 = Pi
+        else: 
+            break
+    return Pi0 
 
 
 
 
 
-def compute_local_flow(x, y , p , ts, N_spatial = 5, N_temporel = 100):
+def compute_local_flow(x, y , p , ts, N = 5, dt = 100):
     # Boucle a travers tous les evements
-    for i in range(len(x)):
-        neighbors = np.where((x[i] - N_spatial <= x ) & (x<= x[i] +N_spatial) &
-                        (y[i] - N_spatial <= y ) & (y<= y[i] +N_spatial) &
-                        (ts[i] - N_temporel <= ts) & (ts <= ts[i] + N_temporel)
+    for e in range(len(x)):
+
+        # COMPUTE LOCAL FLOW
+        nei = np.where((x[e] - N <= x ) & (x<= x[e] +N) &
+                        (y[e] - N <= y ) & (y<= y[e] +N) &
+                        (ts[e] - dt <= ts) & (ts <= ts[e] + dt)
         )
-    return neighbors
+
+        # le plan ax + by + t + c = 0
+        P = local_plane_fitting(x,y,ts,nei)
+        if P is None:
+            continue
+        a,b,c = P
+
+        Inliners_count = 0
+        #arr est un alias pour np array
+        U_chap = np.linalg.norm(arr([a,b]))
+        z_chap = np.sqrt(a**2 + b**2)
+        
+        for i in range(len(x[nei])):
+            t_chap = a*x[i] - x[e] + b*y[i] - y[e] 
+            if ts[i] - t_chap < z_chap/2:
+                Inliners_count +=1
+        
+        if Inliners_count >= 0.5*N**2:
+            teta = np.arctan(a/b)
+            Un = arr([U_chap, teta]).T
+        else:
+            Un = arr([0,0])
 
 
+        #MULTI SPATIAL SCALE MAX POOLING
+        # Sigma represente le voisinage spatial. Il nou est donée dans le papier  : 0 to 100 pixels in steps of 10
+        if Un != arr([0,0]):
+            S = compute_set_neighborhood(x[e], y[e])
+            for s in S:
+                ...
 
 
-v = local_plane_fitting(x,y,p,ts,5, 100)
-# s = compute_local_flow(x,y,p,ts)
+        
+
+def compute_set_neighborhood(x, y):
+    S  = arr([])
+    for r in range(10, 100, 10):
+        coord = get_circular_coordinates(x, y, r)
+        S = np.append(S, coord, axis = 0)
+    
+    return S
+
+
+# v = local_plane_fitting(x,y,p,ts,5, 100)
+s = compute_local_flow(x,y,p,ts)
 # print(len(s[0]))
 
 data = np.load("test.npy")
