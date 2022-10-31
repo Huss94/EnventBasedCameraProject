@@ -2,6 +2,7 @@ import scipy.io
 import numpy as np 
 import scipy.linalg
 import time
+from time import time
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -160,15 +161,18 @@ def local_plane_fitting(x, y ,ts, nei ):
 
 
 
-def compute_local_flow(x, y , p , ts, N = 5, dt = 100):
+def compute_local_flow(x, y , p , ts, N = 5, dt = 1000):
     # Boucle a travers tous les evements
-    for e in range(len(x)):
+    for e in tqdm(range(len(x))):
+
+        #Fais gagner enormement de temps a la recherche de neighbors par la suite
+        timewindows = np.where()
 
         # COMPUTE LOCAL FLOW
         nei = np.where((x[e] - N <= x ) & (x<= x[e] +N) &
                         (y[e] - N <= y ) & (y<= y[e] +N) &
                         (ts[e] - dt <= ts) & (ts <= ts[e] + dt)
-        )
+        )[0]
 
         # le plan ax + by + t + c = 0
         P = local_plane_fitting(x,y,ts,nei)
@@ -178,7 +182,7 @@ def compute_local_flow(x, y , p , ts, N = 5, dt = 100):
 
         Inliners_count = 0
         #arr est un alias pour np array
-        U_chap = np.linalg.norm(arr([a,b]))
+        U_chap = np.abs(arr([a,b])) # ===================================> Un doute sur cette ligne
         z_chap = np.sqrt(a**2 + b**2)
         
         for i in range(len(x[nei])):
@@ -195,20 +199,31 @@ def compute_local_flow(x, y , p , ts, N = 5, dt = 100):
 
         #MULTI SPATIAL SCALE MAX POOLING
         # Sigma represente le voisinage spatial. Il nou est donée dans le papier  : 0 to 100 pixels in steps of 10
-        if Un != arr([0,0]):
-            S = compute_set_neighborhood(x[e], y[e])
-            for s in S:
-                ...
+        if not np.array_equal(Un, [0,0]):
+            S = compute_set_neighborhood(x,y, ts, x[e], y[e])
+            Un_k = []
+            for k in S:
+                #Pour chaqeu sigma il faut qu'on calcule la vélocité moyenne, et donc le plane fitting de chaque sigma, on utilise l'equation 2 du papier 
+                Ki = len(k)
+
+                Ak, Bk, _ = local_plane_fitting(x,y,ts, k)
 
 
         
 
-def compute_set_neighborhood(x, y):
-    S  = arr([])
-    for r in range(10, 100, 10):
-        coord = get_circular_coordinates(x, y, r)
-        S = np.append(S, coord, axis = 0)
+def compute_set_neighborhood(x,y,t, xe, ye , tpast = 5e3):
+    ti = time()
+    S  = []
+    # Il est utile de calculer en amont la timewindows pour ne pas refaire la recherche dans tous les x et y par la suite (prend trop de temps)
+    timewindows = np.where(t <= tpast)[0]
     
+    for r in range(10, 100, 10):
+        print("r = ", r)
+        coord = get_circular_coordinates(xe, ye, r)
+        indices = np.where((x[timewindows] == coord[:,0]) & (y[timewindows] == coord[:,1]))[0]
+        S.append(indices)
+    
+    print('finishd in ', time() - ti)
     return S
 
 
