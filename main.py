@@ -5,13 +5,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import bisect
-
-
-
-
-
-
-
+import os 
 
 # Alias :
 arr = np.array
@@ -205,8 +199,9 @@ def compute_flow(x, y, p, ts, N=3, dt=1000, N_events = None):
         Inliners_count = 0
         z_chap = np.sqrt(a**2 + b**2)
 
-        # U_chap represente la speed, la longueur du vecteur 
-        U_chap = 1 / z_chap
+
+        # Û in the article
+        speed_amplitude = 1 / z_chap 
 
         for i in nei:
             # the formula is given as below in the paper but I think it is an error because t_chap would be too high every time (except for event with low coordinates)
@@ -218,8 +213,8 @@ def compute_flow(x, y, p, ts, N=3, dt=1000, N_events = None):
                 Inliners_count += 1
 
         if Inliners_count >= 0.5*N**2:
-            teta = np.arctan(a/b)
-            Un = arr([U_chap, teta]).T
+            teta = np.arctan2(a,b)
+            Un = arr([speed_amplitude, teta]).T
         else:
             Un = arr([0, 0])
             teta = 0
@@ -232,15 +227,11 @@ def compute_flow(x, y, p, ts, N=3, dt=1000, N_events = None):
         # Sigma represente le voisinage spatial. Il nou est donée dans le papier  : 0 to 100 pixels in steps of 10
         if not np.array_equal(Un, [0, 0]):
             #FLow correction
-
-            bestU, bestTeta = correct_flow(x, y, ts,e, local_length_teta)
+            bestU, bestTeta, _ = correct_flow(x, y, ts,e, local_length_teta)
             corrected_length_teta[e,:] = arr([bestU, bestTeta])
 
-            # vx_tab_local[e] = local_length_teta[e,0] * np.cos( local_length_teta[e,1])
-            # vy_tab_local[e] = local_length_teta[e,0] * np.sin( local_length_teta[e,1])
-            # vx_tab_corrected[e] = corrected_length_teta[e,0] * np.cos( corrected_length_teta[e,1])
-            # vy_tab_corrected[e] = corrected_length_teta[e,0] * np.sin( corrected_length_teta[e,1])
-
+            # We should probably assign the corrected flow to all the events in the spatial scale, as said in the paper:
+            # "Third, we calculate the mean direction for the flows in this scale and assign the direction to all the local flow events within this scale"
 
 
 
@@ -272,9 +263,11 @@ def correct_flow(x, y, t,e, Un_tab, tpast=500):
 
     U_means = []
     tetas_means = []
+    scale_indices = []
     for r in range(10, 100, 10):
         indices = time_window[np.where((x[e] - r <= x[time_window]) & (x[time_window] <= x[e] + r))[0]]
         indices = indices[np.where((y[e] - r <= y[indices]) & (y[indices] <= y[e] + r))[0]]
+        scale_indices.append(indices)
         
 
         sum_un = 0
@@ -292,7 +285,7 @@ def correct_flow(x, y, t,e, Un_tab, tpast=500):
         
     
     sig_max = np.argmax(U_means)
-    return U_means[sig_max], tetas_means[sig_max]
+    return U_means[sig_max], tetas_means[sig_max], scale_indices[sig_max]
 
 
 
@@ -301,21 +294,23 @@ def correct_flow(x, y, t,e, Un_tab, tpast=500):
 
 # Chargement des données
 mat = scipy.io.loadmat('multipattern1.mat')
-x = mat['x'][:,0]
-y = mat['y'][:,0]
+x = mat['x'][:,0] 
+y = mat['y'][:,0] 
 p = mat['p'][:,0]
 ts = mat['ts'][:,0]
 
 
-# Calcul le flow local et le flow corrigé, retourne un tableau avec toutes les metriques (se ne sont pas vraiment des metrics )
+# Calcul le flow local et le flow corrigé, retourne un tableau avec toutes les metriques
 print("Calcul du flow des events : ")
 metrics = compute_flow(x, y, p, ts, N = 3 , dt =  1000)
 
 
-# écriture des données dans un fichier texte : 
+if not os.path.isdir("data"):
+    os.mkdir("data")
 
+# écriture des données dans un fichier texte : 
 print("Ecriture des données dans le fichier out_flow.txt")
-with open("out_flow.txt", 'w') as f:
+with open("data/out_flow.txt", 'w') as f:
     for i in range(metrics.shape[0]):
         s = ''
         space = ' '
@@ -331,6 +326,6 @@ with open("out_flow.txt", 'w') as f:
 
         f.write(s)
 
+# On sauvegarde en np.save aussi (beaucoup plus rapide a load)
 
-
-
+np.save("data/out_flow.npy", metrics)
